@@ -27,9 +27,9 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(modifyTemperature.tm, &QTimer::timeout, this, [&](){
         modifyTemperature.tm->stop();
         targetTemperature = this->ui->TargetTemperatureLabel->text().toFloat();
-        QString data = "request";
+        QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + this->ui->TargetTemperatureLabel->text();
         tcpClient->write(data.toUtf8());
-        qDebug() << "发送数据" << "request";
+        qDebug() << "发送数据" << data;
     });
 
     connect(timerRealTime, &QTimer::timeout, this, [&](){
@@ -49,8 +49,9 @@ MainWindow::MainWindow(QWidget *parent) :
         }
 
         if(this->ui->StatusLabel->text() == "Standby" && targetTemperature != realTimeRoomTemperature){
-            tcpClient->write("request");
-            qDebug() << "发送数据:" << "request";
+            QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + QString("%1").arg(targetTemperature);
+            tcpClient->write(data.toUtf8());
+            qDebug() << "发送数据:" << data;
         }
     });
     timerRealTime->start(10000);
@@ -88,30 +89,50 @@ MainWindow::MainWindow(QWidget *parent) :
         while(!data.isEmpty()) {
             if (data.left(9) == "serverMsg")
             {
-                QString serverMsgInfoPattern = ("serverMsg/([0-1])/([0-9]*)/([0-9]*)");
-                QRegExp rx(serverMsgInfoPattern);
-                handleData = data.mid(0,17);
-                data = data.mid(17);
+                if (data.left(16) == "serverMsg/reject") {
+                    handleData = data.mid(0,16);
+                    data = data.mid(16);
+                    QMessageBox::information(this, tr("Fail"),
+                                             tr("Your login is rejected. Please check your "
+                                                "information is right."));
+                    tcpClient->disconnectFromHost();
+                    if (tcpClient->state() == QAbstractSocket::UnconnectedState || tcpClient->waitForDisconnected(1000) )
+                    {
+                        this->ui->LoginBtn->setText("Login");
+                        qDebug() << "断开服务器";
+                        //将其他按钮和输入栏设置为false
+                        this->ui->UserIDLineEdit->setEnabled(true);
+                        this->ui->RoomNumLineEdit->setEnabled(true);
+                        this->ui->ConsumptionLabel->setText("0");
+                        this->ui->FeeLabel->setText("0");
+                    }
+                }
+                else {
+                    QString serverMsgInfoPattern = ("serverMsg/([0-1])/([0-9]*)/([0-9]*)");
+                    QRegExp rx(serverMsgInfoPattern);
+                    handleData = data.mid(0,17);
+                    data = data.mid(17);
 
-                int pos = handleData.indexOf(rx);
-                qDebug() << pos;
-                if (pos < 0) return;
+                    int pos = handleData.indexOf(rx);
+                    qDebug() << pos;
+                    if (pos < 0) return;
 
-                this->ui->StatusLabel->setText("Standby");
-                qDebug() << rx.capturedTexts();
-                workMode = rx.cap(1).toInt();
-                workMode ? this->ui->WorkModeLabel->setText("heat") : this->ui->WorkModeLabel->setText("cool");
-                targetTemperature = workMode ? 28 : 22;
-                this->ui->TargetTemperatureLabel->setText(QString("%1").arg(targetTemperature));
-                lowerLimit = rx.cap(2).toFloat();
-                this->ui->LowestTemperatureLabel->setText(rx.cap(2));
-                upperLimit = rx.cap(3).toFloat();
-                this->ui->HighestTemperatureLabel->setText(rx.cap(3));
+                    this->ui->StatusLabel->setText("Standby");
+                    qDebug() << rx.capturedTexts();
+                    workMode = rx.cap(1).toInt();
+                    workMode ? this->ui->WorkModeLabel->setText("heat") : this->ui->WorkModeLabel->setText("cool");
+                    targetTemperature = workMode ? 28 : 22;
+                    this->ui->TargetTemperatureLabel->setText(QString("%1").arg(targetTemperature));
+                    lowerLimit = rx.cap(2).toFloat();
+                    this->ui->LowestTemperatureLabel->setText(rx.cap(2));
+                    upperLimit = rx.cap(3).toFloat();
+                    this->ui->HighestTemperatureLabel->setText(rx.cap(3));
 
-                if (realTimeRoomTemperature != targetTemperature) {
-                    QString reData = "request";
-                    tcpClient->write(reData.toUtf8());
-                    qDebug() << "发送数据:" << reData;
+                    if (realTimeRoomTemperature != targetTemperature) {
+                        QString reData = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + QString("%1").arg(targetTemperature);
+                        tcpClient->write(reData.toUtf8());
+                        qDebug() << "发送数据:" << reData;
+                    }
                 }
             }
             else if (data.left(6) == "answer")

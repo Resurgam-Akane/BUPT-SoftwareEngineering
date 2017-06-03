@@ -20,7 +20,6 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
     connect(timer, &QTimer::timeout, this, [&](){
        this->write("request");
     });
-    timer->start(2000);
 
     //add by xuzhu 2017/5/27
     timerCost = new QTimer(this);
@@ -120,12 +119,21 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
         qDebug() << "收到数据:" << data;
         if (data.left(9) == "clientMsg")
         {
-            //todo:
             handleData = data.mid(0, 19);
             data = data.mid(19);
             roomNum = handleData.mid(10, 4);
             userID = handleData.mid(15);
+            //todo:小组内编写阶段，用户名和身份证都是4个字符
+            //todo:可以入住，返回 “serverMsg/工作模式/最低可设置温度/最高可设置温度”； 不可入住，返回 ”serverMsg/reject”
+            /* 伪代码
+             * if (允许住入) ｛
+             *      reData = "serverMsg/0/18/25";
+             *      timer->start(2000);
+             * ｝
+             * else reData = "serverMsg/reject";
+             */
             reData = "serverMsg/0/18/25";
+            timer->start(2000);
         }
         else if (data.left(10) == "requestEnd")
         {
@@ -168,8 +176,9 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
         }
         else if (data.left(7) == "request")
         {
-            handleData = data.mid(0,7);
-            data = data.mid(7);
+            handleData = data.mid(0,13);
+            data = data.mid(13);
+            QString roomTemp = handleData.mid(8,2), targetTemp = handleData.mid(11,2); //当前室温和目标温度
             if (isFirstRequest) {
                 isFirstRequest = false;
                 timerCost->start(60000);
@@ -178,7 +187,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
                 //将第一次request的时间写入数据库 记得加上新的目标温度
             }
             else {
-                QString cur = QDateTime::currentDateTime().toString(Qt::ISODate); //第二、三等次request的时间
+                QString cur = QDateTime::currentDateTime().toString(Qt::ISODate); //第二、三等次request的时间，此类情况是室内温度没有达到目标温度时，又改变了目标温度
                 //将第二、三次request的时间写入数据库 记得加上新的目标温度
             }
 
