@@ -7,6 +7,12 @@
 #include "threadhandle.h"
 #include "globalvar.h"
 
+#include "statementshow.h"
+#include <QDebug>
+#include <QTextStream>
+#include "globalvar.h"
+#include "connectsql.h"
+
 namespace Ui {
 class MainWindow;
 }
@@ -19,10 +25,17 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
+private slots:
+    void on_pushButton_clicked();
+
 private:
     Ui::MainWindow *ui;
     TcpServer server;
 
+    statementshow * widget;
+
+protected:
+     void closeEvent(QCloseEvent *event);
 
 };
 

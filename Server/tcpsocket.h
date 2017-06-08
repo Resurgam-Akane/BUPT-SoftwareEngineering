@@ -10,6 +10,11 @@
 //add by xuzhu 2017/5/27
 #include <QTimer>
 #include <QDateTime>
+#include <tuple>
+
+#include "connectsql.h"
+
+#define FACTOR 24
 
 
 class TcpSocket : public QTcpSocket
@@ -20,12 +25,25 @@ public:
     ~TcpSocket();
     QByteArray handleData(QByteArray data,const QString & ip, qint16 port);//用来处理数据的函数
 
+//add by wang 2017/6/4
+    //用于报表处理
+
+    void sqlonoffTimes();
+    void sqlstartend();
+    void sqlstartWindchange();
+    void sqlstartTempchange(QString Ctemp);
+    void sqlendWindchange();
+    void sqlendTempchange(QString Ctemp);
+    void sqlnewRequire(QString Ctemp1, QString Ctemp2);
+    QString mimicTime();
+
 signals:
     //void readData(const int,const QString &,const quint16,const QByteArray &);
     void sockDisConnect(const int ,const QString &,const quint16, QThread *);//NOTE:断开连接的用户信息，此信号必须发出！线程管理类根据信号计数的
 public slots:
     void sentData(const QByteArray & ,const int);//发送信号的槽
     void disConTcp(int i);
+    void sentAnswer(TcpSocket*);
 
 protected slots:
     void readData();//接收数据
@@ -43,9 +61,28 @@ private:
     QString roomNum;
     QString userID;
     QString windVelocity;
-    int fee;
-    int consumption;
+    float fee;
+    float consumption;
     bool isFirstRequest;
+//add by wang 2017/6/4
+    //用于报表处理
+
+    int onoffTimes;
+    QString sockettime;
+    QString beginTime;
+    QString endTime;
+    int startTemperature;
+    int endTemperature;
+    QString startWind;
+    QString endWind;
+
+    int socketDay;
+    int socketWeek;
+    int socketMonth;
+    int socketYear;
+    int socketHour;
+    int socketMinute;
+    int socketSecond;
 };
 
 #endif // TCPSOCKET_H

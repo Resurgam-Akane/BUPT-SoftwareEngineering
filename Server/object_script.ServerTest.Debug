@@ -1,0 +1,12 @@
+INPUT(
+./debug\main.o
+./debug\mainwindow.o
+./debug\tcpserver.o
+./debug\tcpsocket.o
+./debug\threadhandle.o
+./debug\statementshow.o
+./debug\moc_mainwindow.o
+./debug\moc_tcpserver.o
+./debug\moc_tcpsocket.o
+./debug\moc_statementshow.o
+);

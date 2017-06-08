@@ -5,7 +5,7 @@
 #-------------------------------------------------
 
 QT       += core gui network
-
+QT += sql
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 TARGET = ServerTest
@@ -16,12 +16,16 @@ SOURCES += main.cpp\
         mainwindow.cpp \
     tcpserver.cpp \
     tcpsocket.cpp \
-    threadhandle.cpp
+    threadhandle.cpp \
+    statementshow.cpp
 
 HEADERS  += mainwindow.h \
     tcpserver.h \
     tcpsocket.h \
     threadhandle.h \
-    globalvar.h
+    globalvar.h \
+    connectsql.h \
+    statementshow.h
 
-FORMS    += mainwindow.ui
+FORMS    += mainwindow.ui \
+    statementshow.ui

@@ -1,9 +1,11 @@
 ﻿#include "tcpsocket.h"
+#include "tcpserver.h"
 #include <QtConcurrent/QtConcurrent>
 #include <QHostAddress>
 #include <QDebug>
 #include <QTimer>
 #include <QRegExp>
+#include "globalvar.h"
 
 TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数在主线程执行，lambda在子线程
     QTcpSocket(parent),socketID(socketDescriptor)
@@ -29,16 +31,16 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
 
         //计算
         if (windVelocity == "0") {
-            consumption = workSec;
-            fee = consumption;
+            consumption = workSec * 0.8 * FACTOR;
+            fee = consumption * 5;
         }
         else if (windVelocity == "1") {
-            consumption = workSec * 2;
-            fee = consumption;
+            consumption = workSec * 1 * FACTOR;
+            fee = consumption * 5;
         }
         else {
-            consumption = workSec * 3;
-            fee = consumption;
+            consumption = workSec * 1.3 * FACTOR;
+            fee = consumption * 5;
         }
         QString data = "cost/" + QString("%1").arg(consumption) + QString("%1").arg(fee);
         this->write(data.toUtf8());
@@ -57,6 +59,8 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
     connect(&watcher,&QFutureWatcher<QByteArray>::finished,this,&TcpSocket::startNext);
     connect(&watcher,&QFutureWatcher<QByteArray>::canceled,this,&TcpSocket::startNext);
     qDebug() << "new connect" ;
+
+    //add by wang
 }
 
 TcpSocket::~TcpSocket()
@@ -92,7 +96,7 @@ void TcpSocket::readData()
 {
 //    datas.append(this->readAll());
     auto data  = handleData(this->readAll(),this->peerAddress().toString(),this->peerPort());
-    qDebug() << "发送数据:" << data;
+    //qDebug() << "发送数据:" << data;
     this->write(data);
 //    if (!watcher.isRunning())//放到异步线程中处理。
 //    {
@@ -116,26 +120,25 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
     //目前假设数据。
     //reData为回复的字符流，data为收到的字符流，handledata为处理的字符流
     while (!data.isEmpty()) {
-        qDebug() << "收到数据:" << data;
+        //qDebug() << "收到数据:" << data;
         if (data.left(9) == "clientMsg")
         {
             handleData = data.mid(0, 19);
             data = data.mid(19);
             roomNum = handleData.mid(10, 4);
             userID = handleData.mid(15);
-            //todo:小组内编写阶段，用户名和身份证都是4个字符
-            //todo:可以入住，返回 “serverMsg/工作模式/最低可设置温度/最高可设置温度”； 不可入住，返回 ”serverMsg/reject”
-            /* 伪代码
-             * if (允许住入) ｛
-             *      reData = "serverMsg/0/18/25";
-             *      timer->start(2000);
-             * ｝
-             * else reData = "serverMsg/reject";
-             */
-            reData = "serverMsg/0/18/25";
-            timer->start(2000);
+            TcpServer::loadTcpClientMtx->lock();
+            if (TcpServer::loadTcpClient->contains(roomNum))
+                reData = "serverMsg/reject";
+            else {
+                TcpServer::loadTcpClient->insert(roomNum, this);
+                timer->start(2000);
+                reData = "serverMsg/0/18/25";
+            }
+            TcpServer::loadTcpClientMtx->unlock();
+            sqlonoffTimes();
         }
-        else if (data.left(10) == "requestEnd")
+        else if (data.left(10) == "requestEnd")                     //todo::从runlist拿出，再运行负载均衡模块
         {
             handleData = data.mid(0, 10);
             data = data.mid(10);
@@ -147,66 +150,151 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
 
             //计算
             if (windVelocity == "0") {
-                consumption = workSec;
-                fee = consumption;
+                consumption = workSec * 0.8 * FACTOR;
+                fee = consumption * 5;
             }
             else if (windVelocity == "1") {
-                consumption = workSec * 2;
-                fee = consumption;
+                consumption = workSec * 1 * FACTOR;
+                fee = consumption * 5;
             }
             else {
-                consumption = workSec * 3;
-                fee = consumption;
+                consumption = workSec * 1.3 * FACTOR;
+                fee = consumption * 5;
             }
             //QString data = "cost/" + QString("%1").arg(consumption) + QString("%2").arg(fee);
             QString con = QString("%1").arg(consumption);
             QString fe = QString("%2").arg(fee);
 
+            TcpServer::runListMtx->lock();
+            TcpServer::waitListMtx->lock();
+            TcpServer::LoadAvgMtx->lock();
+            qDebug() << "exit" << "                         " << roomNum;
+            TcpServer::runList->remove_if([&](std::tuple<QString, int, int> n){return std::get<0>(n) == roomNum;});
+            TcpServer::LoadAvg(TcpServer::myself);
+
+            TcpServer::LoadAvgMtx->unlock();
+            TcpServer::waitListMtx->unlock();
+            TcpServer::runListMtx->unlock();
+
             reData = "cost/" + con.toUtf8() + "/" + fe.toUtf8();
+
+            sqlstartend();
         }
-        else if (data.left(4) == "wind")
+        else if (data.left(4) == "wind")            //todo::分为在runlist或者waitlist两种情况，并重新排序
         {
             handleData = data.mid(0,6);
             data = data.mid(6);
             //qDebug() << handleData;
             windVelocity = handleData[handleData.length()-1];
-            qDebug() << windVelocity;
+            //qDebug() << windVelocity;
             //负载允许的条件下，发送acceptWind
+            bool isInrunList = false;
+            TcpServer::runListMtx->lock();
+            TcpServer::waitListMtx->lock();
+            TcpServer::LoadAvgMtx->lock();
+            for (auto it = TcpServer::runList->begin(); it != TcpServer::runList->end() && !isInrunList; ++it) {
+                if (std::get<0>(*it) == roomNum)
+                    isInrunList = true;
+            }
+
+            bool isInwaitList = false;
+            auto it = TcpServer::waitList->begin();
+            for (; it != TcpServer::waitList->end() && !isInwaitList; ++it) {
+                if (std::get<0>(*it) == roomNum)
+                    isInwaitList = true;
+            }
+            TcpServer::LoadAvgMtx->unlock();
+            TcpServer::waitListMtx->unlock();
+            TcpServer::runListMtx->unlock();
+
+            if (isInrunList) ;//在runlist里，什么都不干
+            else if (!isInrunList && isInwaitList) {//修改waitList对应元素的内容，并且调用负载均衡模块
+                int order = std::get<2>(*it);
+                TcpServer::runListMtx->lock();
+                TcpServer::waitListMtx->lock();
+                TcpServer::LoadAvgMtx->lock();
+                TcpServer::waitList->push_back(std::make_tuple(roomNum, windVelocity.toInt(), order));
+
+                TcpServer::LoadAvg(TcpServer::myself);
+
+                TcpServer::LoadAvgMtx->unlock();
+                TcpServer::waitListMtx->unlock();
+                TcpServer::runListMtx->unlock();
+            }
+            else if (!isInrunList && !isInwaitList) ; //不在runlist也不再waitlist，什么都不干
+
             reData = "acceptWind";
+            //qDebug()<<"-------fengsu---------";
+            sqlendWindchange();
         }
         else if (data.left(7) == "request")
         {
             handleData = data.mid(0,13);
             data = data.mid(13);
-            QString roomTemp = handleData.mid(8,2), targetTemp = handleData.mid(11,2); //当前室温和目标温度
+            QString roomTemp = handleData.mid(8,2);     //当前室温
+            QString targetTemp = handleData.mid(11,2);  //目标温度
+            sqlstartWindchange();
             if (isFirstRequest) {
                 isFirstRequest = false;
                 timerCost->start(60000);
                 timeStart = QDateTime::currentDateTime();
                 QString cur = QDateTime::currentDateTime().toString(Qt::ISODate); //第一次request的时间
+
+                TcpServer::runListMtx->lock();
+                TcpServer::waitListMtx->lock();
+                TcpServer::LoadAvgMtx->lock();
+                qDebug() << "enter waitlist" << "                         " << roomNum;
+                TcpServer::waitList->push_back(std::make_tuple(roomNum, 0, int(TcpServer::waitList->size())));
+                //todo::waitList排序
+
+
+                TcpServer::LoadAvg(TcpServer::myself);
+
+                TcpServer::LoadAvgMtx->unlock();
+                TcpServer::waitListMtx->unlock();
+                TcpServer::runListMtx->unlock();
                 //将第一次request的时间写入数据库 记得加上新的目标温度
+                sqlnewRequire(roomTemp,targetTemp);
             }
             else {
                 QString cur = QDateTime::currentDateTime().toString(Qt::ISODate); //第二、三等次request的时间，此类情况是室内温度没有达到目标温度时，又改变了目标温度
                 //将第二、三次request的时间写入数据库 记得加上新的目标温度
+                bool  isInrunList = false;
+                TcpServer::runListMtx->lock();
+                TcpServer::waitListMtx->lock();
+                TcpServer::LoadAvgMtx->lock();
+                for (auto it = TcpServer::runList->begin(); it != TcpServer::runList->end() && !isInrunList; ++it) {
+                    if (std::get<0>(*it) == roomNum)
+                        isInrunList = true;
+                }
+
+                if (!isInrunList) {                 //如果不在runlist里，则运行负载均衡模块；如果在runlist里，则什么都不做，继续让从控机运行
+                    TcpServer::LoadAvg(TcpServer::myself);
+                }
+                TcpServer::LoadAvgMtx->unlock();
+                TcpServer::waitListMtx->unlock();
+                TcpServer::runListMtx->unlock();
+
+                sqlendTempchange(targetTemp);
             }
 
             //todo:在负载允许的条件下，返回answer。 记录下回anwser的时间
-            reData = "answer";
+             //reData = "answer";
+
         }
         else if (data.left(6) == "answer")
         {
             handleData = data.mid(0,14);
             data = data.mid(14);
 
-            QString words(data);
+            QString words(handleData);
             QString answerPattern("answer/([0-9]*)/([0-9]*)/(0|1|2)");
             QRegExp rx(answerPattern);
 
             int pos = words.indexOf(rx);
             if (pos < 0) return "";
 
-            qDebug() << rx.capturedTexts(); //("answer/25/22/0", "25", "22", "0")
+            //qDebug() << rx.capturedTexts(); //("answer/25/22/0", "25", "22", "0")
             reData = "";
         }
     }
@@ -220,4 +308,235 @@ void TcpSocket::startNext()
     {
         watcher.setFuture(QtConcurrent::run(this,&TcpSocket::handleData,datas.dequeue(),this->peerAddress().toString(),this->peerPort()));
     }
+}
+
+void TcpSocket::sqlonoffTimes(){
+//    comTime::calculateTime(&socketYear,&socketMonth,&socketDay,&socketHour,&socketMinute,&socketSecond,&socketWeek);
+//    sockettime = QString::number(socketYear) + "-" + QString::number(socketMonth) + "-" + QString::number(socketDay) +
+//                        "-" + QString::number(socketHour) + ":" + QString::number(socketMinute) + ":" + QString::number(socketSecond);
+    sockettime = mimicTime();
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.prepare("SELECT roomnum FROM roomfee WHERE roomnum = ? ");
+    query.addBindValue(roomNum);
+    query.exec();
+    int num = 0;
+    while(query.next()){
+        num++;
+        qDebug()<<query.value(0).toString();
+    }
+    if(!num){
+        query.clear();
+        query.prepare("insert into roomfee (roomnum, onofftimes, starttime, endtime, starttemperature, endtemperature, startwind, endwind, fee, newesttime)"
+                      "VALUES(:roomnum, :onofftimes, :starttime, :endtime, :starttemperature, :endtemperature, :startwind,:endwind, :fee, :newesttime)");
+        query.bindValue(":roomnum", roomNum);
+        query.bindValue(":onofftimes", 1);
+        query.bindValue(":starttime", sockettime);
+        query.bindValue(":endtime", sockettime);
+        query.bindValue(":starttemperature", "20");
+        query.bindValue(":endtemperature", "20");
+        query.bindValue(":startwind", "0");
+        query.bindValue(":endwind","0");
+        query.bindValue(":fee",0);
+        query.bindValue(":newesttime", 1);
+        query.exec();
+    }
+    else{
+        int thetimes = 0;
+        query.clear();
+        query.prepare("SELECT onofftimes FROM roomfee WHERE roomnum = ? ");
+        query.addBindValue(roomNum);
+        query.exec();
+        while(query.next()){
+            thetimes = query.value(0).toInt();
+        }
+
+        thetimes++;
+
+        query.clear();
+        query.prepare("UPDATE roomfee SET onofftimes = ?, newesttime = ? WHERE roomnum = ?");
+        query.bindValue(0, thetimes);
+        query.bindValue(1, 0);
+        query.bindValue(2, roomNum);
+        query.exec();
+
+        query.clear();
+        query.prepare("insert into roomfee (roomnum, onofftimes, starttime, endtime, starttemperature, endtemperature, startwind, endwind, fee, newesttime)"
+                      "VALUES(:roomnum, :onofftimes, :starttime, :endtime, :starttemperature, :endtemperature, :startwind,:endwind, :fee, :newesttime)");
+        query.bindValue(":roomnum", roomNum);
+        query.bindValue(":onofftimes", thetimes);
+        query.bindValue(":starttime", sockettime);
+        query.bindValue(":endtime", sockettime);
+        query.bindValue(":starttemperature", "20");
+        query.bindValue(":endtemperature", "20");
+        query.bindValue(":startwind", 0);
+        query.bindValue(":endwind",0);
+        query.bindValue(":fee",0);
+        query.bindValue(":newesttime",1);
+        query.exec();
+    }
+}
+
+void TcpSocket::sqlstartend(){
+//    comTime::calculateTime(&socketYear,&socketMonth,&socketDay,&socketHour,&socketMinute,&socketSecond,&socketWeek);
+//    sockettime = QString::number(socketYear) + "-" + QString::number(socketMonth) + "-" + QString::number(socketDay) +
+//                        "-" + QString::number(socketHour) + ":" + QString::number(socketMinute) + ":" + QString::number(socketSecond);
+    sockettime = mimicTime();
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.prepare("UPDATE roomfee SET endtime = ?, fee = ?, newesttime = ? WHERE roomnum = ? and newesttime = ?");
+    query.bindValue(0, sockettime);
+    query.bindValue(1, fee);
+    query.bindValue(2, 0);
+    query.bindValue(3, roomNum);
+    query.bindValue(4, 1);
+    query.exec();
+    QSqlQuery query2(db);
+    int lateday = 0;
+    int weekday = 0;
+    int latemonth;
+    query2.clear();
+    query2.exec("select month,day,week from roomadjust");
+    while(query2.next()){
+        latemonth = query2.value(0).toInt();
+        lateday = query2.value(1).toInt();
+        weekday = query2.value(2).toInt();
+    }
+    if(weekday == 0){
+        query2.prepare("insert into roomadjust (roomnum, date, expense, month, day, hour, min,week)"
+                      "VALUES(:roomnum, :date, :expense, :month, :day, :hour, :min,:week)");
+        query2.bindValue(0, roomNum);
+        query2.bindValue(1, sockettime);
+        query2.bindValue(2, fee);
+        query2.bindValue(3, sockettime.section('-',0,0).toInt());
+        query2.bindValue(4, sockettime.section('-',1,1).toInt());
+        query2.bindValue(5, sockettime.section('-',2,2).toInt());
+        query2.bindValue(6, sockettime.section('-',3,3).toInt());
+        query2.bindValue(7, 1);
+        query2.exec();
+    }
+    else{
+        int judgeweek = weekday + ((sockettime.section('-',0,0).toInt() - latemonth) * 30 + (sockettime.section('-',1,1).toInt() - lateday))/7;
+        query2.prepare("insert into roomadjust (roomnum, date, expense, month, day, hour, min,week)"
+                      "VALUES(:roomnum, :date, :expense, :month, :day, :hour, :min,:week)");
+        query2.bindValue(0, roomNum);
+        query2.bindValue(1, sockettime);
+        query2.bindValue(2, fee);
+        query2.bindValue(3, sockettime.section('-',0,0).toInt());
+        query2.bindValue(4, sockettime.section('-',1,1).toInt());
+        query2.bindValue(5, sockettime.section('-',2,2).toInt());
+        query2.bindValue(6, sockettime.section('-',3,3).toInt());
+        query2.bindValue(7, judgeweek);
+        query2.exec();
+    }
+}
+
+void TcpSocket::sqlstartWindchange(){
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.prepare("UPDATE roomfee SET startwind = ? WHERE roomnum = ? and newesttime = ?");
+    query.addBindValue(windVelocity);
+    query.addBindValue(roomNum);
+    query.addBindValue(1);
+    if(!query.exec())   qDebug()<<query.lastError();
+}
+
+void TcpSocket::sqlstartTempchange(QString Ctemp){
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.clear();
+    query.prepare("UPDATE roomfee SET starttemperature = ? WHERE roomnum = ? and newesttime = ?");
+    query.bindValue(0, Ctemp);
+    query.bindValue(1, roomNum);
+    query.bindValue(2, 1);
+    query.exec();
+}
+
+void TcpSocket::sqlendWindchange(){
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.prepare("UPDATE roomfee SET endwind = ? WHERE roomnum = ? and newesttime = ?");
+    query.bindValue(0, windVelocity);
+    query.bindValue(1, roomNum);
+    query.bindValue(2, 1);
+    if(!query.exec())   qDebug()<<query.lastError();
+}
+
+void TcpSocket::sqlendTempchange(QString Ctemp){
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    query.prepare("UPDATE roomfee SET endtemperature = ? WHERE roomnum = ? and newesttime = ?");
+    query.bindValue(0, Ctemp);
+    query.bindValue(1, roomNum);
+    query.bindValue(2, 1);
+    query.exec();
+}
+
+void TcpSocket::sqlnewRequire(QString Ctemp1,QString Ctemp2){
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    sockettime = mimicTime();
+    query.prepare("SELECT onofftimes, newesttime FROM roomfee WHERE roomnum = ? ");
+    query.addBindValue(roomNum);
+    query.exec();
+    int num = 0;
+    int ifnew = 0;
+    while(query.next()){
+       num = query.value(0).toInt();
+       ifnew = query.value(1).toInt();
+    }
+    query.clear();
+    if(ifnew == 0){
+        query.clear();
+        query.prepare("insert into roomfee (roomnum, onofftimes, starttime, endtime, starttemperature, endtemperature, startwind, endwind, fee, newesttime)"
+                      "VALUES(:roomnum, :onofftimes, :starttime, :endtime, :starttemperature, :endtemperature, :startwind,:endwind, :fee, :newesttime)");
+        query.bindValue(":roomnum", roomNum);
+        query.bindValue(":onofftimes", num);
+        query.bindValue(":starttime", sockettime);
+        query.bindValue(":endtime", sockettime);
+        query.bindValue(":starttemperature", Ctemp1);
+        query.bindValue(":endtemperature", Ctemp2);
+        query.bindValue(":startwind", windVelocity);
+        query.bindValue(":endwind",windVelocity);
+        query.bindValue(":fee",0);
+        query.bindValue(":newesttime",1);
+        if(!query.exec())   qDebug()<<query.lastError();
+    }
+    else{
+        query.clear();
+        query.exec("UPDATE roomfee SET starttemperature = ?, endtemperature = ? WHERE roomnum = ? and newesttime = ?");
+        query.addBindValue(Ctemp1);
+        query.addBindValue(Ctemp2);
+        query.addBindValue(roomNum);
+        query.addBindValue(1);
+        if(!query.exec())   qDebug()<<query.lastError();
+    }
+}
+
+QString TcpSocket::mimicTime(){
+    QString nowtime = QDateTime::currentDateTime().toString(Qt::ISODate);//2017-06-06T01:49:37
+    nowtime = nowtime.section('T',1,1);
+    int nowhour = nowtime.section(':',0,0).toInt();
+    int nowminute = nowtime.section(':',1,1).toInt();
+    int nowsecond = nowtime.section(':',2,2).toInt();
+    int mmonth,mday,mhour,mmin;
+    mmonth = nowhour/2 + 1;
+    mday = (nowhour % 2) * 15 + (nowminute/2) + 1;
+    mhour = (nowminute % 2) * 12 + (nowsecond/60) * 24;
+    mmin = (nowsecond * 24) % 60;
+    if(mhour >= 24){
+        mhour = mhour -24;
+        mday++;
+    }
+    if(mday > 30){
+        mday = mday -30;
+        mmonth++;
+    }
+    return QString::number(mmonth) + "-" + QString::number(mday) + "-" +QString::number(mhour) + "-" + QString::number(mmin);
+}
+
+void TcpSocket::sentAnswer(TcpSocket * i)
+{
+    if (i == this)
+        this->write("answer");
 }

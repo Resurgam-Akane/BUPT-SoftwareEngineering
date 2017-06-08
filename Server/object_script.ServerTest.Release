@@ -1,0 +1,12 @@
+INPUT(
+./release\main.o
+./release\mainwindow.o
+./release\tcpserver.o
+./release\tcpsocket.o
+./release\threadhandle.o
+./release\statementshow.o
+./release\moc_mainwindow.o
+./release\moc_tcpserver.o
+./release\moc_tcpsocket.o
+./release\moc_statementshow.o
+);
