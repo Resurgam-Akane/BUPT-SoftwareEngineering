@@ -44,6 +44,7 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
         }
         QString data = "cost/" + QString("%1").arg(consumption) + QString("%1").arg(fee);
         this->write(data.toUtf8());
+        qDebug() << "send data:" << data;
     });
 
 
@@ -52,6 +53,21 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
             qDebug() << "disconnect";
             timer->stop();
             timerCost->stop();
+
+            TcpServer::loadTcpClientMtx->lock();
+            TcpServer::loadTcpClient->remove(roomNum);
+            TcpServer::loadTcpClientMtx->unlock();
+
+            TcpServer::runListMtx->lock();
+            TcpServer::waitListMtx->lock();
+            TcpServer::LoadAvgMtx->lock();
+
+            TcpServer::runList->remove_if([&](std::tuple<QString, int, int> n){return std::get<0>(n) == roomNum;});
+            TcpServer::waitList->remove_if([&](std::tuple<QString, int, int> n){return std::get<0>(n) == roomNum;});
+            TcpServer::LoadAvg(TcpServer::myself);
+            TcpServer::LoadAvgMtx->unlock();
+            TcpServer::waitListMtx->unlock();
+            TcpServer::runListMtx->unlock();
 
             emit sockDisConnect(socketID,this->peerAddress().toString(),this->peerPort(),QThread::currentThread());//发送断开连接的用户信息
             this->deleteLater();
@@ -168,7 +184,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             TcpServer::runListMtx->lock();
             TcpServer::waitListMtx->lock();
             TcpServer::LoadAvgMtx->lock();
-            qDebug() << "exit" << "                         " << roomNum;
+            //qDebug() << "exit" << "                         " << roomNum;
             TcpServer::runList->remove_if([&](std::tuple<QString, int, int> n){return std::get<0>(n) == roomNum;});
             TcpServer::LoadAvg(TcpServer::myself);
 
@@ -177,7 +193,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             TcpServer::runListMtx->unlock();
 
             reData = "cost/" + con.toUtf8() + "/" + fe.toUtf8();
-
+            qDebug() << "send data:" << reData;
             sqlstartend();
         }
         else if (data.left(4) == "wind")            //todo::分为在runlist或者waitlist两种情况，并重新排序
@@ -189,6 +205,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             //qDebug() << windVelocity;
             //负载允许的条件下，发送acceptWind
             bool isInrunList = false;
+            bool isInwaitList = false;
             TcpServer::runListMtx->lock();
             TcpServer::waitListMtx->lock();
             TcpServer::LoadAvgMtx->lock();
@@ -196,8 +213,6 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
                 if (std::get<0>(*it) == roomNum)
                     isInrunList = true;
             }
-
-            bool isInwaitList = false;
             auto it = TcpServer::waitList->begin();
             for (; it != TcpServer::waitList->end() && !isInwaitList; ++it) {
                 if (std::get<0>(*it) == roomNum)
@@ -243,7 +258,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
                 TcpServer::runListMtx->lock();
                 TcpServer::waitListMtx->lock();
                 TcpServer::LoadAvgMtx->lock();
-                qDebug() << "enter waitlist" << "                         " << roomNum;
+                //qDebug() << "enter waitlist" << "                         " << roomNum;
                 TcpServer::waitList->push_back(std::make_tuple(roomNum, 0, int(TcpServer::waitList->size())));
                 //todo::waitList排序
 
@@ -323,7 +338,7 @@ void TcpSocket::sqlonoffTimes(){
     int num = 0;
     while(query.next()){
         num++;
-        qDebug()<<query.value(0).toString();
+        //qDebug()<<query.value(0).toString();
     }
     if(!num){
         query.clear();

@@ -27,9 +27,19 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(modifyTemperature.tm, &QTimer::timeout, this, [&](){
         modifyTemperature.tm->stop();
         targetTemperature = this->ui->TargetTemperatureLabel->text().toFloat();
-        QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + this->ui->TargetTemperatureLabel->text();
-        tcpClient->write(data.toUtf8());
-        qDebug() << "发送数据" << data;
+        if ((realTimeRoomTemperature == targetTemperature) || (realTimeRoomTemperature < targetTemperature && workMode == 0) || (realTimeRoomTemperature > targetTemperature && workMode == 1)) {
+            QString data = "requestEnd";
+            tcpClient->write(data.toUtf8());
+            qDebug() << "发送数据" << data;
+            timerRealTime->start(10000);
+            timerWoking->stop();
+            this->ui->StatusLabel->setText("Standby");
+        }
+        else {
+            QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + this->ui->TargetTemperatureLabel->text();
+            tcpClient->write(data.toUtf8());
+            qDebug() << "发送数据" << data;
+        }
     });
 
     connect(timerRealTime, &QTimer::timeout, this, [&](){
@@ -48,7 +58,12 @@ MainWindow::MainWindow(QWidget *parent) :
             this->ui->RealTimeTemperatureLabel->setText(QString("%1 Celsius").arg(realTimeRoomTemperature));
         }
 
-        if(this->ui->StatusLabel->text() == "Standby" && targetTemperature != realTimeRoomTemperature){
+        if(this->ui->StatusLabel->text() == "Standby" && targetTemperature < realTimeRoomTemperature && workMode == 0){
+            QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + QString("%1").arg(targetTemperature);
+            tcpClient->write(data.toUtf8());
+            qDebug() << "发送数据:" << data;
+        }
+        else if (this->ui->StatusLabel->text() == "Standby" && targetTemperature > realTimeRoomTemperature && workMode == 1) {
             QString data = "request/" + QString("%1").arg(realTimeRoomTemperature) + "/" + QString("%1").arg(targetTemperature);
             tcpClient->write(data.toUtf8());
             qDebug() << "发送数据:" << data;
@@ -165,15 +180,16 @@ MainWindow::MainWindow(QWidget *parent) :
             }
             else if (data.left(4) == "cost")
             {
-                QString costInfoPattern = ("cost/([0-9]*)/([0-9]*)");
+                QString costInfoPattern = ("cost/(([0-9]*)||([0-9]*\\.[0-9]*))/(([0-9]*)||([0-9]*\\.[0-9]*))");
                 QRegExp rx(costInfoPattern);
                 int pos = data.indexOf(rx);
                 qDebug() << pos;
+                qDebug() << rx.capturedTexts();
                 if (pos < 0) return;
-                data = rx.cap(3);
+                data = rx.cap(6);
 
-                this->ui->ConsumptionLabel->setText(QString("%1").arg(this->ui->ConsumptionLabel->text().toInt() + rx.cap(1).toInt()));
-                this->ui->FeeLabel->setText(QString("%1").arg(this->ui->FeeLabel->text().toInt() + rx.cap(2).toInt()));
+                this->ui->ConsumptionLabel->setText(QString("%1").arg(this->ui->ConsumptionLabel->text().toFloat() + rx.cap(1).toFloat()));
+                this->ui->FeeLabel->setText(QString("%1").arg(this->ui->FeeLabel->text().toFloat() + rx.cap(4).toFloat()));
             }
         }
     });
