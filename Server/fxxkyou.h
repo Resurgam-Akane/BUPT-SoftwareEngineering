@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QTextStream>
 #include <QMessageBox>
+#include <QRegExp>
 namespace Ui {
 class fxxkyou;
 }
@@ -29,6 +30,9 @@ private slots:
     void on_pushButton_2_clicked();
 
     void on_pushButton_3_clicked();
+
+protected:
+     void closeEvent(QCloseEvent *event);
 
 private:
     Ui::fxxkyou *ui;

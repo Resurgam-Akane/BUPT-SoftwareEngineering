@@ -22,7 +22,9 @@ MainWindow::MainWindow(QWidget *parent) :
     this->ui->LowVelocityBtn->setEnabled(false);
     this->ui->RealTimeTemperatureLabel->setText("25 Celsius");
     this->ui->TargetTemperatureLabel->setText("");
-    //this statement need to be deleted
+    QRegExp regExp("[0-9]+");
+    ui->UserIDLineEdit->setValidator(new QRegExpValidator(regExp, this));
+    ui->RoomNumLineEdit->setValidator(new QRegExpValidator(regExp, this));
     //add by xuzhu
     connect(modifyTemperature.tm, &QTimer::timeout, this, [&](){
         modifyTemperature.tm->stop();
@@ -274,12 +276,30 @@ void MainWindow::on_LoginBtn_clicked()
         this->RoomNum = this->ui->RoomNumLineEdit->text();
         if (UserID.size() <= 4 && RoomNum.size() <= 4)
         {
-            tcpClient->connectToHost("127.0.0.1",6666);
-            qDebug() << "-------------";
+            bool isRight = true;
+            for(auto i : this->UserID) {
+                if (!(i <= '9' && i >= '0')) isRight = false;
+            }
+
+            for(auto i : this->RoomNum) {
+                if (!(i <= '9' && i >= '0')) isRight = false;
+            }
+
+            if (isRight)
+                tcpClient->connectToHost("127.0.0.1",6666);
+            else
+                QMessageBox::information(this, tr("Input wrong"),
+                            tr("Please inspect your input"
+                               "length must be less than 4,"
+                               "input must consist of number."));
+
         }
         else
         {
-            // prompt
+            QMessageBox::information(this, tr("Input wrong"),
+                        tr("Please inspect your input"
+                           "length must be less than 4,"
+                           "input must consist of number."));
             return;
         }
     }

@@ -9,6 +9,8 @@ controller::controller(QWidget *parent) :
 {
     ui->setupUi(this);
     //server = new TcpServer(this);
+    QRegExp regExp("[1-9]|10");
+    ui->lineEdit->setValidator(new QRegExpValidator(regExp, this));
     server.listen(QHostAddress::Any,6666);
     widget = new statementshow(this);
     refreshTimer = new QTimer(this);
@@ -61,6 +63,9 @@ void controller::on_logout_clicked()
     {
        QMessageBox::information(NULL,tr("h"),tr("Logout fail"));
     }
+    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    QSqlQuery query(db);
+    if(query.exec("DROP TABLE airstate"));
 }
 
 /*void controller::on_workmode_clicked()
@@ -79,6 +84,8 @@ void controller::closeEvent(QCloseEvent *event)
     query.prepare("DELETE FROM roomfee WHERE newesttime = ?");
     query.bindValue(0, 1);
     query.exec();
+    query.clear();
+    if(query.exec("DROP TABLE airstate"));
 }
 
 void controller::on_lineEdit_textEdited(const QString &arg1)//设置刷新频率
@@ -122,3 +129,4 @@ void controller::on_pushButton_clicked()
     model->setHeaderData(5, Qt::Horizontal, QObject::tr("Running State"));
     ui->tableView->setModel(model);
 }
+

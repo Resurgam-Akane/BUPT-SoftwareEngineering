@@ -2,6 +2,7 @@
 #define CONTROLLER_H
 
 #include <QMainWindow>
+#include <QCloseEvent>
 #include"adminstrator.h"
 #include"workmode.h"
 #include"fxxkyou.h"

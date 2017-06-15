@@ -14,6 +14,8 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
     windVelocity = "0";
     fee = 0;
     consumption = 0;
+    totalconsum = 0;
+    totalfee = 0;
     this->setSocketDescriptor(socketDescriptor);
     connect(this,&TcpSocket::readyRead,this,&TcpSocket::readData);
 
@@ -31,18 +33,24 @@ TcpSocket::TcpSocket(qintptr socketDescriptor, QObject *parent) : //构造函数
 
         //计算
         if (windVelocity == "0") {
-            consumption += workSec * 0.8 * FACTOR;
-            fee += consumption * 5;
+            consumption = workSec * 0.8 * FACTOR;
+            fee = consumption * 5;
+            totalfee += fee;
+            totalconsum += consumption;
         }
         else if (windVelocity == "1") {
-            consumption += workSec * 1 * FACTOR;
-            fee += consumption * 5;
+            consumption = workSec * 1 * FACTOR;
+            fee = consumption * 5;
+            totalfee += fee;
+            totalconsum += consumption;
         }
         else {
-            consumption += workSec * 1.3 * FACTOR;
-            fee += consumption * 5;
+            consumption = workSec * 1.3 * FACTOR;
+            fee = consumption * 5;
+            totalfee += fee;
+            totalconsum += consumption;
         }
-        QString data = "cost/" + QString("%1").arg(consumption) +"/"+ QString("%1").arg(fee);
+        QString data = "cost/" + QString("%1").arg(totalconsum) +"/"+ QString("%1").arg(totalfee);
         this->write(data.toUtf8());
         qDebug() << "send data:" << data;
     });
@@ -104,8 +112,6 @@ void TcpSocket::sentData(const QByteArray &data, const int id)
 
 void TcpSocket::disConTcp(int i)
 {
-    QSqlDatabase db = QSqlDatabase::database("QSQLITE");
-    QSqlQuery query(db);
     if (i == socketID)
     {
         this->disconnectFromHost();
@@ -116,8 +122,6 @@ void TcpSocket::disConTcp(int i)
         this->disconnectFromHost();
         this->deleteLater();
     }
-
-
 }
 
 void TcpSocket::readData()
@@ -148,7 +152,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
     //目前假设数据。
     //reData为回复的字符流，data为收到的字符流，handledata为处理的字符流
     while (!data.isEmpty()) {
-        //qDebug() << "收到数据:" << data;
+        qDebug() << "收到数据:" << data;
         if (data.left(9) == "clientMsg")
         {
             handleData = data.mid(0, 19);
@@ -161,7 +165,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             else if(Cold_Or_Warm==0) //制冷模式
             {
                 TcpServer::loadTcpClient->insert(roomNum, this);
-                timer->start(500);
+                timer->start(900);
                 reData = "serverMsg/0/18/25";
                 sqlsetcoldstate();
                 emit this->reFresh();
@@ -169,7 +173,7 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             }else if(Cold_Or_Warm==1)//制热模式
             {
                 TcpServer::loadTcpClient->insert(roomNum, this);
-                timer->start(500);
+                timer->start(900);
                 reData = "serverMsg/1/25/30";
                 sqlsethotstate();
                 emit this->reFresh();
@@ -191,19 +195,25 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
             //计算
             if (windVelocity == "0") {
                 consumption += workSec * 0.8 * FACTOR;
-                fee += consumption * 5;
+                fee = consumption * 5;
+                totalfee += fee;
+                totalconsum += consumption;
             }
             else if (windVelocity == "1") {
                 consumption += workSec * 1 * FACTOR;
-                fee += consumption * 5;
+                fee = consumption * 5;
+                totalfee += fee;
+                totalconsum += consumption;
             }
             else {
-                consumption += workSec * 1.3 * FACTOR;
-                fee += consumption * 5;
+                consumption = workSec * 1.3 * FACTOR;
+                fee = consumption * 5;
+                totalfee += fee;
+                totalconsum += consumption;
             }
             //QString data = "cost/" + QString("%1").arg(consumption) + QString("%2").arg(fee);
-            QString con = QString("%1").arg(consumption);
-            QString fe = QString("%2").arg(fee);
+            QString con = QString("%1").arg(totalconsum);
+            QString fe = QString("%2").arg(totalfee);
 
             TcpServer::runListMtx->lock();
             TcpServer::waitListMtx->lock();
@@ -271,17 +281,17 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
         }
         else if (data.left(7) == "request")             //haha:将用户新请求，包括当前温度和目标温度，写入数据库，用户当前的状态为在等待队列 wait
         {
-            int i;
-            for (i = 7; i!=data.length(); ++i) {
-                if (!((data.at(i) >= '0' && data.at(i) <='9') || data.at(i) == '/' || data.at(i) == '.')) break;
-            }
-            handleData = data.mid(0,i);
-            data = data.mid(i);
-            roomTemp = handleData.mid(8,2);     //当前室温
-            targetTemp = handleData.mid(11,2);  //目标温度
+            QString words(data);
+            QString requestPattern("request\/([0-9]+(\.[0-9]+)?)\/([0-9]+(\.[0-9]+)?)");
+            QRegExp rx(requestPattern);
+
+            int pos = words.indexOf(rx);
+            if (pos < 0) return "";
+            data = rx.cap(5).toLatin1();
+            roomTemp = rx.cap(1);     //当前室温
+            targetTemp = rx.cap(3);  //目标温度
             sqlsetwaitstate();
             emit this->reFresh();
-            qDebug() << "refresh";
             sqlstartWindchange();
             if (isFirstRequest) {
                 isFirstRequest = false;
@@ -319,7 +329,10 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
                 if (!isInrunList) {                 //如果不在runlist里，则运行负载均衡模块；如果在runlist里，则什么都不做，继续让从控机运行
                     TcpServer::LoadAvg(TcpServer::myself);
                 }
-                else this->write("answer");
+                else {
+                    this->write("answer");
+                    sqlsetrunstate();
+                }
                 TcpServer::LoadAvgMtx->unlock();
                 TcpServer::waitListMtx->unlock();
                 TcpServer::runListMtx->unlock();
@@ -333,21 +346,20 @@ QByteArray TcpSocket::handleData(QByteArray data, const QString &ip, qint16 port
         }
         else if (data.left(6) == "answer")      //haha:使用当前温度rx.cap(1)和目标温度rx.cap(2)
         {                                       //haha:将房间号，用户ID，当前温度，目标温度写到数据库里
-            handleData = data.mid(0,14);
-            data = data.mid(14);
-
-            QString words(handleData);
-            QString answerPattern("answer/([0-9]*)/([0-9]*)/(0|1|2)");
+            QString words(data);
+            QString answerPattern("answer\/([0-9]+(\.[0-9]+)?)\/([0-9]+(\.[0-9]+)?)\/(0|1|2)");
             QRegExp rx(answerPattern);
 
             int pos = words.indexOf(rx);
             if (pos < 0) return "";
+            data = rx.cap(6).toLatin1();
 
-            qDebug() << rx.capturedTexts(); //("answer/25/22/0", "25", "22", "0")
+ //           qDebug() << rx.capturedTexts(); //("answer/25/22/0", "25", "22", "0")
             reData = "";
-            sqlsetanwstate(rx.cap(1),rx.cap(2));
+            qDebug() << rx.cap(1) << " ------------" << rx.cap(3);
+            sqlsetanwstate(rx.cap(1),rx.cap(3));
             emit this->reFresh();
-            qDebug() << "refresh";
+            //qDebug() << "refresh";
         }
     }
     return reData;
@@ -498,7 +510,7 @@ void TcpSocket::sqlstartWindchange(){
     query.addBindValue(windVelocity);
     query.addBindValue(roomNum);
     query.addBindValue(1);
-    if(!query.exec())   qDebug()<<query.lastError();
+    if(!query.exec())   qDebug()<<"511"<<query.lastError();
 }
 
 void TcpSocket::sqlstartTempchange(QString Ctemp){
@@ -519,7 +531,7 @@ void TcpSocket::sqlendWindchange(){
     query.bindValue(0, windVelocity);
     query.bindValue(1, roomNum);
     query.bindValue(2, 1);
-    if(!query.exec())   qDebug()<<query.lastError();
+    if(!query.exec())   qDebug()<<"532"<<query.lastError();
 }
 
 void TcpSocket::sqlendTempchange(QString Ctemp){
@@ -560,7 +572,7 @@ void TcpSocket::sqlnewRequire(QString Ctemp1,QString Ctemp2){
         query.bindValue(":endwind",windVelocity);
         query.bindValue(":fee",0);
         query.bindValue(":newesttime",1);
-        if(!query.exec())   qDebug()<<query.lastError();
+        if(!query.exec())   qDebug()<<"573"<<query.lastError();
     }
     else{
         query.clear();
@@ -569,7 +581,7 @@ void TcpSocket::sqlnewRequire(QString Ctemp1,QString Ctemp2){
         query.addBindValue(Ctemp2);
         query.addBindValue(roomNum);
         query.addBindValue(1);
-        if(!query.exec())   qDebug()<<query.lastError();
+        if(!query.exec())   qDebug()<<"582"<<query.lastError();
     }
 }
 
@@ -607,7 +619,6 @@ void TcpSocket::sentAnswer(TcpSocket * i)
 }
 
 void TcpSocket::sqlsetanwstate(QString Ctemp1, QString Ctemp2){
-    qDebug()<<"--1--";
     QSqlDatabase db = QSqlDatabase::database("QSQLITE");
     QSqlQuery query(db);
     query.prepare("UPDATE airstate SET roomtemp = ? ,targettemp = ? WHERE roomnum = ? and username = ?");
@@ -615,7 +626,7 @@ void TcpSocket::sqlsetanwstate(QString Ctemp1, QString Ctemp2){
     query.addBindValue(Ctemp2);
     query.addBindValue(roomNum);
     query.addBindValue(userID);
-    if(!query.exec())   qDebug()<<query.lastError();
+    if(!query.exec())   qDebug()<<"627"<<query.lastError();
 }
 
 void TcpSocket::sqlsethotstate(){
@@ -629,7 +640,7 @@ void TcpSocket::sqlsethotstate(){
     query.bindValue(":targettemp", "28");
     query.bindValue(":wind","0");
     query.bindValue(":runstate", "stand by");
-    if(!query.exec())   qDebug()<<query.lastError();
+    if(!query.exec())   qDebug()<<"641"<<query.lastError();
 }
 
 void TcpSocket::sqlsetcoldstate(){
@@ -643,7 +654,7 @@ void TcpSocket::sqlsetcoldstate(){
     query.bindValue(":targettemp", "22");
     query.bindValue(":wind","0");
     query.bindValue(":runstate", "standby");
-    if(!query.exec())   qDebug()<<query.lastError();
+    if(!query.exec())   qDebug()<<"655"<<query.lastError();
 }
 
 void TcpSocket::sqlsetrunstate(){

@@ -69,6 +69,8 @@ private:
     QString windVelocity;
     float fee;
     float consumption;
+    float totalfee;
+    float totalconsum;
     bool isFirstRequest;
 //add by wang 2017/6/4
     //用于报表处理

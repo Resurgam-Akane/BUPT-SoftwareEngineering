@@ -46,7 +46,7 @@ TcpServer::~TcpServer()
 {
     QSqlDatabase db = QSqlDatabase::database("QSQLITE");
     QSqlQuery query(db);
-    query.exec("DROP TABLE airstate");
+    query.prepare("drop TABLE airstate");
     emit this->sentDisConnect(-1);
     delete tcpClient;
 }

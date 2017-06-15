@@ -7,6 +7,10 @@ fxxkyou::fxxkyou(QWidget *parent) :
     ui(new Ui::fxxkyou)
 {
     ui->setupUi(this);
+    QRegExp regExp("[1-9][0-9]{3}");
+    QRegExp regExp2("[0-9]{4}");
+    ui->lineEdit->setValidator(new QRegExpValidator(regExp, this));
+    ui->lineEdit_2->setValidator(new QRegExpValidator(regExp2, this));
 }
 
 fxxkyou::~fxxkyou()
@@ -80,3 +84,10 @@ void fxxkyou::on_pushButton_3_clicked()
     w->show();
     //ui->pushButton_3->setEnabled(false);
 }
+
+void fxxkyou::closeEvent(QCloseEvent *event){
+    //QSqlDatabase db = QSqlDatabase::database("QSQLITE");
+    //QSqlQuery query(db);
+    //if(query.exec("DROP TABLE airstate"));
+}
+
