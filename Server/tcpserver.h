@@ -37,6 +37,7 @@ signals:
     void sentData(const QByteArray &,const int);//向scoket发送消息
     void sentDisConnect(int i); //断开特定连接，并释放资源，-1为断开所有。
     void sentAnwser(TcpSocket*);
+    void reFresh();
 
 public slots:
     void clear(); //断开所有连接，线程计数器请0

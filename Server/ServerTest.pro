@@ -13,19 +13,33 @@ TEMPLATE = app
 
 
 SOURCES += main.cpp\
-        mainwindow.cpp \
     tcpserver.cpp \
     tcpsocket.cpp \
     threadhandle.cpp \
-    statementshow.cpp
+    statementshow.cpp \
+    adminstrator.cpp \
+    controller.cpp \
+    workmode.cpp \
+    coldorwarm.cpp \
+    fxxkyou.cpp
 
-HEADERS  += mainwindow.h \
+HEADERS  += \
     tcpserver.h \
     tcpsocket.h \
     threadhandle.h \
     globalvar.h \
     connectsql.h \
-    statementshow.h
+    statementshow.h \
+    adminstrator.h \
+    controller.h \
+    workmode.h \
+    coldorwarm.h \
+    fxxkyou.h
 
-FORMS    += mainwindow.ui \
-    statementshow.ui
+FORMS    += \
+    statementshow.ui \
+    controller.ui \
+    workmode.ui \
+    fxxkyou.ui
+
+

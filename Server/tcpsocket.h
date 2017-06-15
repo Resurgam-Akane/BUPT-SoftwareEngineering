@@ -5,7 +5,6 @@
 #include <QQueue>
 #include <QFutureWatcher>
 #include <QByteArray>
-
 #include <QTime>
 //add by xuzhu 2017/5/27
 #include <QTimer>
@@ -35,11 +34,18 @@ public:
     void sqlendWindchange();
     void sqlendTempchange(QString Ctemp);
     void sqlnewRequire(QString Ctemp1, QString Ctemp2);
+    void sqlsetwind();
+    void sqlsetwaitstate();
+    void sqlsetanwstate(QString Ctemp1, QString Ctemp2);
+    void sqlsetrunstate();
+    void sqlsetcoldstate();
+    void sqlsethotstate();
     QString mimicTime();
 
 signals:
     //void readData(const int,const QString &,const quint16,const QByteArray &);
     void sockDisConnect(const int ,const QString &,const quint16, QThread *);//NOTE:断开连接的用户信息，此信号必须发出！线程管理类根据信号计数的
+    void reFresh();
 public slots:
     void sentData(const QByteArray & ,const int);//发送信号的槽
     void disConTcp(int i);
@@ -83,6 +89,9 @@ private:
     int socketHour;
     int socketMinute;
     int socketSecond;
+
+    QString roomTemp;
+    QString targetTemp;
 };
 
 #endif // TCPSOCKET_H

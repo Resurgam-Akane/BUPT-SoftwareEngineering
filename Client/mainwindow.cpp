@@ -154,9 +154,11 @@ MainWindow::MainWindow(QWidget *parent) :
             {
                 handleData = data.mid(0, 6);
                 data = data.mid(6);
-                this->ui->StatusLabel->setText("Working");
-                timerRealTime->stop();
-                timerWoking->start(5000);
+                if (this->ui->StatusLabel->text() != "Working") {
+                    this->ui->StatusLabel->setText("Working");
+                    timerRealTime->stop();
+                    timerWoking->start(5000);
+                }
                 //todo::
             }
             else if (data.left(10) == "acceptWind")
@@ -180,16 +182,16 @@ MainWindow::MainWindow(QWidget *parent) :
             }
             else if (data.left(4) == "cost")
             {
-                QString costInfoPattern = ("cost/(([0-9]*)||([0-9]*\\.[0-9]*))/(([0-9]*)||([0-9]*\\.[0-9]*))");
+                QString costInfoPattern = ("cost\/([0-9]+(\.[0-9]+)?)\/([0-9]+(\.[0-9]+)?)");
                 QRegExp rx(costInfoPattern);
                 int pos = data.indexOf(rx);
                 qDebug() << pos;
                 qDebug() << rx.capturedTexts();
                 if (pos < 0) return;
-                data = rx.cap(6);
+                data = rx.cap(5);
 
-                this->ui->ConsumptionLabel->setText(QString("%1").arg(this->ui->ConsumptionLabel->text().toFloat() + rx.cap(1).toFloat()));
-                this->ui->FeeLabel->setText(QString("%1").arg(this->ui->FeeLabel->text().toFloat() + rx.cap(4).toFloat()));
+                this->ui->ConsumptionLabel->setText(QString("%1").arg(rx.cap(1).toFloat()));
+                this->ui->FeeLabel->setText(QString("%1").arg(rx.cap(3).toFloat()));
             }
         }
     });
@@ -270,31 +272,10 @@ void MainWindow::on_LoginBtn_clicked()
     {
         this->UserID = this->ui->UserIDLineEdit->text();
         this->RoomNum = this->ui->RoomNumLineEdit->text();
-        if (UserID.size() == 4 && RoomNum.size() == 4)
+        if (UserID.size() <= 4 && RoomNum.size() <= 4)
         {
             tcpClient->connectToHost("127.0.0.1",6666);
-            //tcpClient->waitForConnected(100);
-            //tcpClient->waitForConnected(1000);
-/*            if (tcpClient->state() == QAbstractSocket::ConnectedState)
-            {
-                this->ui->LoginBtn->setText("Out");
-                qDebug() << "连接服务器成功";
-                //将其他按钮和输入栏设置为true
-                this->ui->UserIDLineEdit->setEnabled(false);
-                this->ui->RoomNumLineEdit->setEnabled(false);
-                qDebug() << "发送RoomNum和UserID" ;
-
-                //“clientMsg/房间号/身份证号”
-                QString data = "clientMsg/" + RoomNum + "/" + UserID;
-                if (data.isEmpty())
-                {
-                    return ;
-                }
-                tcpClient->write(data.toUtf8());
-                qDebug() << "发送数据:" << data;
-            }
-            else emit tcpClient->error();
-*/
+            qDebug() << "-------------";
         }
         else
         {

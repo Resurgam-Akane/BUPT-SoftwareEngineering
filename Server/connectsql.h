@@ -24,6 +24,9 @@ static bool createConnection()
                "startwind String, endwind String, fee int, newesttime int)");
     query.exec("create table roomadjust(roomnum String key,"
                "date String, expense float, month int, day int, hour int, min int, week int)");
+    query.exec("create table adminstrator(Username QString primary key,Password QString,Status int)");//建立管理员登入表
+    query.exec("create table airstate(roomnum String key, username String, roomtemp String, targettemp String, wind String,"
+               "runstate String)");
     return true;
 }
 

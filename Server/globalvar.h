@@ -5,14 +5,6 @@
 #include <ctime>
 #include <QDebug>
 
-
-// 0:cold, 1:heat;
-struct workMode {
-    int WorkMode;
-    QString HighestCelsius;
-    QString LowestCelsius;
-};
-
 extern int computerDay;
 extern int computerWeek;
 extern int computerMonth;

@@ -1,8 +1,7 @@
 #include "statementshow.h"
 #include <QRegExp>
 #include "ui_statementshow.h"
-#include "mainwindow.h"
-
+#include"controller.h"
 statementshow::statementshow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::statementshow)
